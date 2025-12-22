@@ -1,0 +1,20 @@
+# FastAPI and ASGI server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# LLM - Google Gemini (free tier available)
+google-generativeai>=0.3.0
+
+# Search
+tavily-python==0.3.3
+
+# PDF processing
+pypdf2==3.0.1
+requests==2.31.0
+httpx==0.26.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# CORS
+python-multipart==0.0.6

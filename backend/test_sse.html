@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Demo - Fake Streaming</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin-top: 0;
+            color: #333;
+        }
+        .input-group {
+            margin: 20px 0;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #0051cc;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .output {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            min-height: 100px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+        }
+        .event {
+            margin: 10px 0;
+            padding: 8px;
+            border-left: 3px solid #0070f3;
+            background: white;
+        }
+        .event-type {
+            font-weight: bold;
+            color: #0070f3;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .tool-indicator {
+            color: #666;
+            font-style: italic;
+        }
+        .citation {
+            background: #e8f4fd;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .citation-title {
+            font-weight: bold;
+            color: #0070f3;
+        }
+        .citation-url {
+            font-size: 12px;
+            color: #666;
+            word-break: break-all;
+        }
+        .content {
+            line-height: 1.6;
+            color: #333;
+        }
+        .done {
+            color: #28a745;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 SSE Streaming Demo</h1>
+        <p>This demonstrates Server-Sent Events with our fake streaming endpoint.</p>
+        
+        <div class="input-group">
+            <input 
+                type="text" 
+                id="messageInput" 
+                placeholder="Enter your message..." 
+                value="What is FastAPI?"
+            />
+            <div style="margin-top: 10px;">
+                <label>
+                    <input type="radio" name="endpoint" value="demo" checked> Fake Demo (no API key)
+                </label>
+                <label style="margin-left: 20px;">
+                    <input type="radio" name="endpoint" value="real"> Real AI (requires API key)
+                </label>
+            </div>
+            <button id="sendBtn" onclick="startStreaming()">Send Message</button>
+        </div>
+        
+        <div class="output" id="output">
+            <span style="color: #999;">Events will appear here...</span>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+
+        function startStreaming() {
+            const message = document.getElementById('messageInput').value;
+            const output = document.getElementById('output');
+            const sendBtn = document.getElementById('sendBtn');
+            
+            // Get selected endpoint
+            const endpoint = document.querySelector('input[name="endpoint"]:checked').value;
+            const url = endpoint === 'demo' 
+                ? 'http://localhost:8000/chat/stream/demo'
+                : 'http://localhost:8000/chat/stream';
+            
+            // Clear previous output
+            output.innerHTML = '';
+            sendBtn.disabled = true;
+            
+            // Make POST request to get stream
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message: message })
+            })
+            .then(response => {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                // Read the stream
+                function readStream() {
+                    reader.read().then(({ done, value }) => {
+                        if (done) {
+                            sendBtn.disabled = false;
+                            return;
+                        }
+                        
+                        // Decode chunk
+                        const chunk = decoder.decode(value, { stream: true });
+                        processSSEChunk(chunk);
+                        
+                        // Continue reading
+                        readStream();
+                    });
+                }
+                
+                readStream();
+            })
+            .catch(error => {
+                output.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
+                sendBtn.disabled = false;
+            });
+        }
+        
+        // Current content accumulator
+        let currentContent = '';
+        let contentDiv = null;
+        
+        function processSSEChunk(chunk) {
+            const output = document.getElementById('output');
+            const lines = chunk.split('\n');
+            
+            let currentEvent = null;
+            let currentData = null;
+            
+            for (const line of lines) {
+                if (line.startsWith('event:')) {
+                    currentEvent = line.substring(7).trim();
+                }
+                else if (line.startsWith('data:')) {
+                    currentData = line.substring(6).trim();
+                    
+                    if (currentEvent && currentData) {
+                        handleEvent(currentEvent, currentData);
+                        currentEvent = null;
+                        currentData = null;
+                    }
+                }
+            }
+        }
+        
+        function handleEvent(eventType, dataJson) {
+            const output = document.getElementById('output');
+            const data = JSON.parse(dataJson);
+            
+            switch(eventType) {
+                case 'tool_start':
+                    const toolStartDiv = document.createElement('div');
+                    toolStartDiv.className = 'event';
+                    toolStartDiv.id = `tool-${data.tool_name}`;
+                    
+                    // Different icons for different tools
+                    let icon = '🔧';
+                    if (data.tool_name === 'web_search') icon = '🔍';
+                    if (data.tool_name === 'reading_pdf') icon = '📄';
+                    if (data.tool_name === 'synthesizing_answer') icon = '✨';
+                    
+                    toolStartDiv.innerHTML = `
+                        <div class="event-type">${icon} ${data.tool_name.replace(/_/g, ' ')}</div>
+                        <div class="tool-indicator">${data.display_message}</div>
+                    `;
+                    output.appendChild(toolStartDiv);
+                    break;
+                
+                case 'tool_end':
+                    // Update existing tool div or create new one
+                    let toolDiv = document.getElementById(`tool-${data.tool_name}`);
+                    if (!toolDiv) {
+                        toolDiv = document.createElement('div');
+                        toolDiv.className = 'event';
+                        output.appendChild(toolDiv);
+                    }
+                    
+                    let icon2 = '✅';
+                    if (data.result_summary && (data.result_summary.includes('unavailable') || data.result_summary.includes('failed'))) {
+                        icon2 = '⚠️';
+                    }
+                    
+                    toolDiv.innerHTML += `
+                        <div style="color: #28a745; margin-top: 5px;">${icon2} ${data.result_summary || 'Complete'}</div>
+                    `;
+                    break;
+                
+                case 'citation':
+                    const citationDiv = document.createElement('div');
+                    citationDiv.className = 'citation';
+                    citationDiv.innerHTML = `
+                        <div class="citation-title">[${data.index}] ${data.title}</div>
+                        <div class="citation-url">${data.url}</div>
+                    `;
+                    output.appendChild(citationDiv);
+                    break;
+                
+                case 'content':
+                    // Create content div if it doesn't exist
+                    if (!contentDiv) {
+                        contentDiv = document.createElement('div');
+                        contentDiv.className = 'event content';
+                        contentDiv.innerHTML = '<div class="event-type">💬 Response</div><div id="streamingContent"></div>';
+                        output.appendChild(contentDiv);
+                    }
+                    
+                    // Append chunk to content
+                    const contentArea = document.getElementById('streamingContent');
+                    contentArea.textContent += data.chunk;
+                    
+                    // Auto-scroll
+                    output.scrollTop = output.scrollHeight;
+                    break;
+                
+                case 'done':
+                    const doneDiv = document.createElement('div');
+                    doneDiv.className = 'event done';
+                    doneDiv.textContent = '✨ ' + data.message;
+                    output.appendChild(doneDiv);
+                    
+                    // Reset for next message
+                    contentDiv = null;
+                    break;
+            }
+        }
+        
+        // Allow Enter key to send
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                startStreaming();
+            }
+        });
+    </script>
+</body>
+</html>

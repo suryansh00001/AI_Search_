@@ -21,10 +21,13 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts'
+import { Citation } from '@/lib/types'
+import { CitationButton } from './CitationButton'
 
 interface GenerativeContentProps {
   content: string
   structuredData?: StructuredData | StructuredData[]
+  citations?: Map<number, Citation>
 }
 
 interface StructuredData {
@@ -38,12 +41,53 @@ const CHART_COLORS = [
   '#10b981', '#06b6d4', '#f43f5e', '#6366f1'
 ]
 
-export function GenerativeContent({ content, structuredData }: GenerativeContentProps) {
+export function GenerativeContent({ content, structuredData, citations }: GenerativeContentProps) {
   console.log('GenerativeContent render:', { 
     hasContent: !!content, 
     hasStructuredData: !!structuredData, 
-    structuredDataCount: Array.isArray(structuredData) ? structuredData.length : (structuredData ? 1 : 0)
+    structuredDataCount: Array.isArray(structuredData) ? structuredData.length : (structuredData ? 1 : 0),
+    hasCitations: !!citations,
+    citationsCount: citations?.size || 0
   })
+  
+  // Pre-process content to replace citation markers with placeholders
+  // that won't be interpreted as markdown
+  const processedContent = React.useMemo(() => {
+    if (!citations || citations.size === 0) {
+      return content
+    }
+    
+    // Replace [1], [2], etc. with a special marker that won't be parsed as markdown
+    return content.replace(/\[(\d+)\]/g, (match, num) => {
+      return `{{CITATION_${num}}}`
+    })
+  }, [content, citations])
+  
+  // Helper function to process children and replace citation placeholders
+  const processCitations = (children: React.ReactNode): React.ReactNode => {
+    return React.Children.map(children, (child) => {
+      if (typeof child === 'string') {
+        // Split by citation markers and render citation buttons
+        const parts = child.split(/({{CITATION_\d+}})/)
+        return parts.map((part, i) => {
+          const match = part.match(/{{CITATION_(\d+)}}/)
+          if (match) {
+            const num = parseInt(match[1])
+            const citation = citations?.get(num)
+            return (
+              <CitationButton 
+                key={`citation-${num}-${i}`}
+                number={num}
+                citation={citation}
+              />
+            )
+          }
+          return <React.Fragment key={i}>{part}</React.Fragment>
+        })
+      }
+      return child
+    })
+  }
   
   return (
     <div className="space-y-4">
@@ -167,13 +211,13 @@ export function GenerativeContent({ content, structuredData }: GenerativeContent
           
           // Headings
           h1({children}) {
-            return <h1 className="text-2xl font-bold text-gray-900 dark:text-white mt-6 mb-4">{children}</h1>
+            return <h1 className="text-2xl font-bold text-gray-900 dark:text-white mt-6 mb-4">{processCitations(children)}</h1>
           },
           h2({children}) {
-            return <h2 className="text-xl font-bold text-gray-900 dark:text-white mt-5 mb-3">{children}</h2>
+            return <h2 className="text-xl font-bold text-gray-900 dark:text-white mt-5 mb-3">{processCitations(children)}</h2>
           },
           h3({children}) {
-            return <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-4 mb-2">{children}</h3>
+            return <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-4 mb-2">{processCitations(children)}</h3>
           },
           
           // Lists
@@ -183,14 +227,27 @@ export function GenerativeContent({ content, structuredData }: GenerativeContent
           ol({children}) {
             return <ol className="list-decimal list-inside space-y-1 text-gray-800 dark:text-gray-200 my-3">{children}</ol>
           },
+          li({children}) {
+            return <li>{processCitations(children)}</li>
+          },
           
           // Paragraphs
           p({children}) {
-            return <p className="text-gray-800 dark:text-gray-200 leading-relaxed my-2">{children}</p>
+            return <p className="text-gray-800 dark:text-gray-200 leading-relaxed my-2">{processCitations(children)}</p>
+          },
+          
+          // Strong/Bold
+          strong({children}) {
+            return <strong>{processCitations(children)}</strong>
+          },
+          
+          // Emphasis/Italic
+          em({children}) {
+            return <em>{processCitations(children)}</em>
           },
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   )

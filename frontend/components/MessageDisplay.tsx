@@ -101,6 +101,7 @@ export function MessageDisplay({ message }: Props) {
               <GenerativeContent 
                 content={message.content}
                 structuredData={message.structuredData}
+                citations={message.citations}
               />
             </div>
           )}
